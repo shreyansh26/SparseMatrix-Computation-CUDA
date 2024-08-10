@@ -7,7 +7,7 @@
 
 #define ROWS            10
 #define COLUMNS         10
-#define SPARSITY_RATIO  0.5
+#define SPARSITY_RATIO  0.2
 #define PAD_VAL         (1<<20)
 
 int main() {
@@ -133,11 +133,11 @@ int main() {
 ### ##    ## ##   #### ##  
                            
 )EOF");
-    unsigned int block_size = 2;
-    unsigned int R_b = (sparse_matrix.R + block_size - 1) / block_size;
-    unsigned int C_b = (sparse_matrix.C + block_size - 1) / block_size;
+    unsigned int bsr_block_size = 2;
+    unsigned int R_b = (sparse_matrix.R + bsr_block_size - 1) / bsr_block_size;
+    unsigned int C_b = (sparse_matrix.C + bsr_block_size - 1) / bsr_block_size;
 
-    BSRMatrix<float> bsr_matrix = sparse_to_bsr<float>(sparse_matrix, block_size);
+    BSRMatrix<float> bsr_matrix = sparse_to_bsr<float>(sparse_matrix, bsr_block_size);
     print_array<unsigned int>(bsr_matrix.rowPtrs, R_b+1, "rowPtrs");
     print_array<unsigned int>(bsr_matrix.colIdx, bsr_matrix.size_colIdx, "colIdx");
     print_array<float>(bsr_matrix.value, bsr_matrix.size_value, "value");
@@ -149,4 +149,31 @@ int main() {
                 << (all_close<float>(sparse_matrix.mat, sparse_matrix_from_bsr.mat, sparse_matrix.R * sparse_matrix.C, abs_tol, rel_tol) ? "true" : "false")
                 << std::endl; 
     
+
+    // BSC Representation
+    printf(R"EOF(
+### ##    ## ##    ## ##   
+ ##  ##  ##   ##  ##   ##  
+ ##  ##  ####     ##       
+ ## ##    #####   ##       
+ ##  ##      ###  ##       
+ ##  ##  ##   ##  ##   ##  
+### ##    ## ##    ## ##   
+                           
+)EOF");
+    unsigned int bsc_block_size = 2;
+    unsigned int bsc_R_b = (sparse_matrix.R + bsc_block_size - 1) / bsc_block_size;
+    unsigned int bsc_C_b = (sparse_matrix.C + bsc_block_size - 1) / bsc_block_size;
+
+    BSCMatrix<float> bsc_matrix = sparse_to_bsc<float>(sparse_matrix, bsc_block_size);
+    print_array<unsigned int>(bsc_matrix.colPtrs, bsc_C_b+1, "colPtrs");
+    print_array<unsigned int>(bsc_matrix.rowIdx, bsc_matrix.size_rowIdx, "rowIdx");
+    print_array<float>(bsc_matrix.value, bsc_matrix.size_value, "value");
+
+    SparseMatrix<float> sparse_matrix_from_bsc = bsc_to_sparse<float>(bsc_matrix);
+    print_matrix<float>(sparse_matrix_from_bsc.mat, sparse_matrix_from_bsc.R, sparse_matrix_from_bsc.C, "Sparse Matrix from BSC");
+
+    std::cout   << "(Original Sparse) vs (BSC->Sparse) allclose: "
+                << (all_close<float>(sparse_matrix.mat, sparse_matrix_from_bsc.mat, sparse_matrix.R * sparse_matrix.C, abs_tol, rel_tol) ? "true" : "false")
+                << std::endl; 
 }

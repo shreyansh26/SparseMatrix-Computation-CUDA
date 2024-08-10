@@ -304,6 +304,94 @@ SparseMatrix<T> bsr_to_sparse(BSRMatrix<T> A) {
     return sparse_matrix;
 }
 
+template <typename T>
+BSCMatrix<T> sparse_to_bsc(SparseMatrix<T> A, unsigned int block_size) {
+    unsigned int b = block_size;
+    unsigned int R_b = (A.R + b - 1) / b;  // Number of block rows
+    unsigned int C_b = (A.C + b - 1) / b;  // Number of block columns
+
+    std::vector<unsigned int> colPtrs(C_b + 1, 0);
+    std::vector<unsigned int> rowIdx;
+    std::vector<T> values;
+
+    for(unsigned int j = 0; j < C_b; j++) {
+        for(unsigned int i = 0; i < R_b; i++) {
+            bool block_nonzero = false;
+            for(unsigned int bj = 0; bj < b; bj++) {
+                for(unsigned int bi = 0; bi < b; bi++) {
+                    unsigned int row = i * b + bi;
+                    unsigned int col = j * b + bj;
+                    if(row < A.R and col < A.C and A.mat[row*A.C + col] != 0) {
+                        block_nonzero = true;
+                        break;
+                    }
+                }
+                if(block_nonzero) 
+                    break;
+            }
+            if(block_nonzero) {
+                rowIdx.push_back(i);
+                for(unsigned int bi = 0; bi < b; bi++) {
+                    for (unsigned int bj = 0; bj < b; bj++) {
+                        unsigned int row = i * b + bi;
+                        unsigned int col = j * b + bj;
+                        if(row < A.R and col < A.C) {
+                            values.push_back(A.mat[row*A.C + col]);
+                        } 
+                        else {
+                            values.push_back(0);
+                        }
+                    }
+                }
+                colPtrs[j+1]++;
+            }
+        }
+    }
+
+    // Convert colPtrs to cumulative sum
+    for(unsigned int j = 1; j <= C_b; j++) {
+        colPtrs[j] += colPtrs[j - 1];
+    }
+    
+    // Create the BSC matrix
+    unsigned int* bsc_col_ptrs = (unsigned int*)malloc(colPtrs.size() * sizeof(unsigned int));
+    unsigned int* bsc_row_idx = (unsigned int*)malloc(rowIdx.size() * sizeof(unsigned int));
+    T* bsc_value = (T*)malloc(values.size() * sizeof(T));
+
+    std::copy(colPtrs.begin(), colPtrs.end(), bsc_col_ptrs);
+    std::copy(rowIdx.begin(), rowIdx.end(), bsc_row_idx);
+    std::copy(values.begin(), values.end(), bsc_value);
+
+    BSCMatrix<T> bsc_matrix = {bsc_col_ptrs, bsc_row_idx, bsc_value, A.R, A.C, A.num_nonzero, (unsigned int)rowIdx.size(), (unsigned int)values.size(), b};
+    return bsc_matrix;
+}
+
+template <typename T>
+SparseMatrix<T> bsc_to_sparse(BSCMatrix<T> A) {
+    unsigned int b = A.block_size;
+    T* mat = (T*)malloc(A.R*A.C * sizeof(T));
+    std::fill(mat, mat + A.R*A.C, static_cast<T>(0));
+
+    for(unsigned int j = 0; j < (A.C + b - 1) / b; j++) {
+        for(unsigned int i = A.colPtrs[j]; i < A.colPtrs[j+1]; i++) {
+            unsigned int row_block = A.rowIdx[i];
+            for(unsigned int bj = 0; bj < b; bj++) {
+                for(unsigned int bi = 0; bi < b; bi++) {
+                    unsigned int row = row_block * b + bi;
+                    unsigned int col = j * b + bj;
+                    if(row < A.R and col < A.C) {
+                        mat[row*A.C + col] = A.value[i * b * b + bi * b + bj];
+                    }
+                }
+            }
+        }
+    }
+
+    SparseMatrix<T> sparse_matrix = {mat, A.R, A.C, A.num_nonzero};
+    return sparse_matrix;
+}
+
+
 template int get_num_nonzero<float>(float*, unsigned int, unsigned int);
 template SparseMatrix<float> generate_sparse_matrix<float>(float, unsigned int, unsigned int);
 template COOMatrix<float> sparse_to_coo<float>(SparseMatrix<float>);
@@ -316,3 +404,5 @@ template ELLMatrix<float> sparse_to_ell<float>(SparseMatrix<float>);
 template SparseMatrix<float> ell_to_sparse<float>(ELLMatrix<float>);
 template BSRMatrix<float> sparse_to_bsr<float>(SparseMatrix<float>, unsigned int);
 template SparseMatrix<float> bsr_to_sparse<float>(BSRMatrix<float>);
+template BSCMatrix<float> sparse_to_bsc<float>(SparseMatrix<float>, unsigned int);
+template SparseMatrix<float> bsc_to_sparse<float>(BSCMatrix<float>);

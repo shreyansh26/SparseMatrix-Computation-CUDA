@@ -63,6 +63,19 @@ struct BSRMatrix {
 };
 
 template <typename T>
+struct BSCMatrix {
+    unsigned int* colPtrs;    // Points to the beginning of each column of blocks
+    unsigned int* rowIdx;     // Row indices of the blocks
+    T* value;                 // Non-zero blocks stored in a flat array
+    unsigned int R;           // Number of rows in the original matrix
+    unsigned int C;           // Number of columns in the original matrix
+    unsigned int num_nonzero; // Number of non-zero blocks
+    unsigned int size_rowIdx; // Number of total blocks
+    unsigned int size_value;  // Total elements in flat array value
+    unsigned int block_size;  // Size of the block (b x b)
+};
+
+template <typename T>
 int get_num_nonzero(T*A, unsigned int R, unsigned int C);
 
 template <typename T>
@@ -97,3 +110,10 @@ BSRMatrix<T> sparse_to_bsr(SparseMatrix<T> A, unsigned int block_size);
 
 template <typename T>
 SparseMatrix<T> bsr_to_sparse(BSRMatrix<T> A);
+
+template <typename T>
+BSCMatrix<T> sparse_to_bsc(SparseMatrix<T> A, unsigned int block_size);
+
+template <typename T>
+SparseMatrix<T> bsc_to_sparse(BSCMatrix<T> A);
+
