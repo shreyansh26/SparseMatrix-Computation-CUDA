@@ -1,0 +1,26 @@
+TORCH_PATH 				= ./libtorch/libtorch_cxx11_abi_2.4.0_cu121
+NVCC 					= /usr/bin/nvcc
+GCC 					= /usr/bin/g++
+NVCC_FLAGS  			= -O3 -I/usr/include
+LD_FLAGS    			= -lcudart -L/usr/lib64
+EXE	        			= coo_to_csr
+OBJ	        			= coo_to_csr.o
+UTILS_OBJ 				= cuda_utils.o
+SPARSE_MATRIX_UTILS_OBJ	= sparse_matrix_utils.o
+
+default: $(EXE)
+
+$(UTILS_OBJ): cuda_utils.cu
+	$(NVCC) -c -o $@ $< $(NVCC_FLAGS)
+
+$(SPARSE_MATRIX_UTILS_OBJ): sparse_matrix_utils.cpp
+	$(NVCC) -c -o $@ $< $(NVCC_FLAGS)
+
+$(OBJ): coo_to_csr.cu
+	$(NVCC) -c -o $@ $< $(NVCC_FLAGS)
+
+$(EXE): $(UTILS_OBJ) $(SPARSE_MATRIX_UTILS_OBJ) $(OBJ)
+	$(GCC) $^ -o $@ $(LD_FLAGS)
+
+clean:
+	rm -rf *.o $(EXE)
