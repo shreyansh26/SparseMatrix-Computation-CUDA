@@ -35,7 +35,7 @@ __global__ void spmv_ell_kernel(ELLMatrix<T> A, T* x, T* y) {
 
     if(row < A.R) {
         float row_sum = 0.0f;
-        for(int i=0; i<A.max_nz_in_row; i++) {
+        for(unsigned int i=0; i<A.max_nz_in_row; i++) {
             unsigned int idx = i * A.R + row;
             unsigned int col_idx = A.colIdx[idx];
             if(col_idx != static_cast<T>(PAD_VAL)) {

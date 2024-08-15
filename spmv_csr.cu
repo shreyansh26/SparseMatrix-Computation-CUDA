@@ -33,7 +33,7 @@ __global__ void spmv_csr_kernel(CSRMatrix<T> A, T* x, T* y) {
 
     if(row < A.R) {
         float row_sum = 0.0f;
-        for(int i=A.rowPtrs[row]; i<A.rowPtrs[row+1]; i++) {
+        for(unsigned int i=A.rowPtrs[row]; i<A.rowPtrs[row+1]; i++) {
             unsigned int col_idx = A.colIdx[i];
             T value = A.value[i];
 

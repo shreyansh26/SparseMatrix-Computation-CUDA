@@ -32,7 +32,7 @@ __global__ void spmv_csc_kernel(CSCMatrix<T> A, T* x, T* y) {
     unsigned int col = blockIdx.x * blockDim.x + threadIdx.x;
 
     if(col < A.C) {
-        for(int i=A.colPtrs[col]; i<A.colPtrs[col+1]; i++) {
+        for(unsigned int i=A.colPtrs[col]; i<A.colPtrs[col+1]; i++) {
             unsigned int row_idx = A.rowIdx[i];
             T value = A.value[i];
 
