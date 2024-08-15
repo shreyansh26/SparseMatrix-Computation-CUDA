@@ -1,67 +1,85 @@
 #include <iostream>
-#include <torch/torch.h>
+// #include <torch/torch.h>
 
 #include "sparse_matrix_utils.hpp"
 #include "cuda_utils.hpp"
 
-#define ROWS            16
-#define COLUMNS         16
+#define ROWS            4096
+#define COLUMNS         4096
 #define SPARSITY_RATIO  0.2
-#define BLOCK_SIZE      4
-
-// template <typename T>
-// void move_csr_matrix_to_device(CSRMatrix<T>& h_matrix, CSRMatrix<T>& d_matrix) {
-//     // Allocate memory on the device
-//     CHECK_CUDA_ERROR(cudaMalloc(&d_matrix.rowPtrs, (h_matrix.R+1) * sizeof(unsigned int)));
-//     CHECK_CUDA_ERROR(cudaMalloc(&d_matrix.colIdx, h_matrix.num_nonzero * sizeof(unsigned int)));
-//     CHECK_CUDA_ERROR(cudaMalloc(&d_matrix.value, h_matrix.num_nonzero * sizeof(T)));
-
-//     // Set dimensions
-//     d_matrix.R = h_matrix.R;
-//     d_matrix.C = h_matrix.C;
-//     d_matrix.num_nonzero = h_matrix.num_nonzero;
-
-//     // Copy data from host to device
-//     CHECK_CUDA_ERROR(cudaMemcpy(d_matrix.rowPtrs, h_matrix.rowPtrs, (h_matrix.R+1) * sizeof(unsigned int), cudaMemcpyHostToDevice));
-//     CHECK_CUDA_ERROR(cudaMemcpy(d_matrix.colIdx, h_matrix.colIdx, h_matrix.num_nonzero * sizeof(unsigned int), cudaMemcpyHostToDevice));
-//     CHECK_CUDA_ERROR(cudaMemcpy(d_matrix.value, h_matrix.value, h_matrix.num_nonzero * sizeof(T), cudaMemcpyHostToDevice));
-// }
-
-// template <typename T>
-// __global__ void spmv_csr_kernel(CSRMatrix<T> A, T* x, T* y) {
-//     unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
-
-//     if(row < A.R) {
-//         float row_sum = 0.0f;
-//         for(int i=A.rowPtrs[row]; i<A.rowPtrs[row+1]; i++) {
-//             unsigned int col_idx = A.colIdx[i];
-//             T value = A.value[i];
-
-//             row_sum += value * x[col_idx];
-//         }
-//         y[row] += row_sum;
-//     }
-// }
-
-// inline unsigned int cdiv(unsigned int a, unsigned int b) {
-//     return (a + b - 1)/b;
-// }
-
-// template <typename T>
-// void spmv_csr(CSRMatrix<T> A, T* x, T* y) {
-//     dim3 blockSize(BLOCK_SIZE);
-//     dim3 gridSize(cdiv(A.R, blockSize.x));
-
-//     spmv_csr_kernel<T><<<gridSize, blockSize>>>(A, x, y);
-    
-//     CHECK_LAST_CUDA_ERROR();    
-// }
+#define BLOCK_SIZE      1024
 
 template <typename T>
-T compute_torch_mv(T A, T x) {
-    T ans = torch::matmul(A, x);
-    return ans;
+void move_bsr_matrix_to_device(BSRMatrix<T>& h_matrix, BSRMatrix<T>& d_matrix) {
+    unsigned int R_b = (h_matrix.R + h_matrix.block_size - 1) /  h_matrix.block_size;
+    // Allocate memory on the device
+    CHECK_CUDA_ERROR(cudaMalloc(&d_matrix.rowPtrs, (R_b+1) * sizeof(unsigned int)));
+    CHECK_CUDA_ERROR(cudaMalloc(&d_matrix.colIdx, h_matrix.size_colIdx * sizeof(unsigned int)));
+    CHECK_CUDA_ERROR(cudaMalloc(&d_matrix.value, h_matrix.size_value * sizeof(T)));
+
+    // Set dimensions
+    d_matrix.R = h_matrix.R;
+    d_matrix.C = h_matrix.C;
+    d_matrix.num_nonzero = h_matrix.num_nonzero;
+    d_matrix.size_colIdx = h_matrix.size_colIdx;
+    d_matrix.size_value = h_matrix.size_value;
+    d_matrix.block_size = h_matrix.block_size;
+
+    // Copy data from host to device
+    CHECK_CUDA_ERROR(cudaMemcpy(d_matrix.rowPtrs, h_matrix.rowPtrs, (R_b+1) * sizeof(unsigned int), cudaMemcpyHostToDevice));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_matrix.colIdx, h_matrix.colIdx, h_matrix.size_colIdx * sizeof(unsigned int), cudaMemcpyHostToDevice));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_matrix.value, h_matrix.value, h_matrix.size_value * sizeof(T), cudaMemcpyHostToDevice));
 }
+
+inline unsigned int cdiv(unsigned int a, unsigned int b) {
+    return (a + b - 1)/b;
+}
+
+template <typename T>
+__global__ void spmv_bsr_kernel(BSRMatrix<T> A, T* x, T* y) {
+    unsigned int b = A.block_size;
+    unsigned int R_b = (A.R + b - 1) / b;
+    unsigned int block_row = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(block_row < R_b) {
+        for(int idx = A.rowPtrs[block_row]; idx < A.rowPtrs[block_row+1]; idx++) {
+            unsigned int block_col = A.colIdx[idx];
+            T* block = &A.value[idx * b * b];
+
+            for(unsigned int i=0; i<b; i++) {
+                unsigned int row = block_row * b + i;
+                T temp_sum = 0.0f;
+
+                if(row < A.R) {
+                    for(unsigned int j=0; j<b; j++) {
+                        unsigned int col = block_col * b + j;
+                        if(col < A.C) {
+                            temp_sum += block[i*b + j] * x[col];
+                        }
+                    }
+                }
+                y[row] += temp_sum;
+            }
+        }
+    }
+}
+
+template <typename T>
+void spmv_bsr(BSRMatrix<T> A, T* x, T* y) {
+    unsigned int R_b = (A.R + A.block_size - 1) /  A.block_size;
+    dim3 blockSize(BLOCK_SIZE);
+    dim3 gridSize(cdiv(R_b, blockSize.x));
+
+    spmv_bsr_kernel<T><<<gridSize, blockSize>>>(A, x, y);
+    
+    CHECK_LAST_CUDA_ERROR();    
+}
+
+// template <typename T>
+// T compute_torch_mv(T A, T x) {
+//     T ans = torch::matmul(A, x);
+//     return ans;
+// }
 
 template <typename T>
 void spmv_bsr_cpu(BSRMatrix<T> bsr, T* x, T* y) {
@@ -94,7 +112,7 @@ template <typename T>
 void run_engine(float sparsity_ratio, unsigned int R, unsigned int C, float abs_tol, double rel_tol) {
     SparseMatrix<T> sparse_matrix = generate_sparse_matrix<T>(sparsity_ratio, R, C);
     
-    unsigned int bsr_block_size = 4;
+    unsigned int bsr_block_size = 32;
     unsigned int R_b = (sparse_matrix.R + bsr_block_size - 1) / bsr_block_size;
     unsigned int C_b = (sparse_matrix.C + bsr_block_size - 1) / bsr_block_size;
 
@@ -102,59 +120,64 @@ void run_engine(float sparsity_ratio, unsigned int R, unsigned int C, float abs_
 
     T* x_h = nullptr;
     T* y_h = nullptr;
+    T* y_h_cpu_ref = nullptr;
 
     CHECK_CUDA_ERROR(cudaMallocHost(&x_h, C*sizeof(T)));
     CHECK_CUDA_ERROR(cudaMallocHost(&y_h, R*sizeof(T)));
+    CHECK_CUDA_ERROR(cudaMallocHost(&y_h_cpu_ref, R*sizeof(T)));
 
     random_initialize_array(x_h, C, 1337);
     std::fill(y_h, y_h+R, static_cast<T>(0));
+    std::fill(y_h_cpu_ref, y_h_cpu_ref+R, static_cast<T>(0));
 
+    spmv_bsr_cpu<T>(A_h, x_h, y_h_cpu_ref);
+    // print_array<T>(y_h_cpu_ref, R, "SpMV output CPU");
 
-    spmv_bsr_cpu<T>(A_h, x_h, y_h);
+    BSRMatrix<T> A_d;
+    T *x_d, *y_d;
 
-    // CSRMatrix<T> A_d;
-    // T *x_d, *y_d;
+    move_bsr_matrix_to_device(A_h, A_d);
 
-    // move_csr_matrix_to_device(A_h, A_d);
+    CHECK_CUDA_ERROR(cudaMalloc(&x_d, C*sizeof(T)));
+    CHECK_CUDA_ERROR(cudaMalloc(&y_d, R*sizeof(T)));
 
-    // CHECK_CUDA_ERROR(cudaMalloc(&x_d, C*sizeof(T)));
-    // CHECK_CUDA_ERROR(cudaMalloc(&y_d, R*sizeof(T)));
+    CHECK_CUDA_ERROR(cudaMemcpy(x_d, x_h, C*sizeof(T), cudaMemcpyHostToDevice));
+    CHECK_CUDA_ERROR(cudaMemcpy(y_d, y_h, R*sizeof(T), cudaMemcpyHostToDevice));
 
-    // CHECK_CUDA_ERROR(cudaMemcpy(x_d, x_h, C*sizeof(T), cudaMemcpyHostToDevice));
-    // CHECK_CUDA_ERROR(cudaMemcpy(y_d, y_h, R*sizeof(T), cudaMemcpyHostToDevice));
+    spmv_bsr<T>(A_d, x_d, y_d);
 
-    // spmv_csr<T>(A_d, x_d, y_d);
+    CHECK_CUDA_ERROR(cudaMemcpy(y_h, y_d, R*sizeof(T), cudaMemcpyDeviceToHost));
+    // print_array<T>(y_h, R, "SpMV output CUDA");
 
-    // CHECK_CUDA_ERROR(cudaMemcpy(y_h, y_d, R*sizeof(T), cudaMemcpyDeviceToHost));
-    // // print_array<T>(y_h, R, "SpMV output");
-
-    auto options = torch::TensorOptions().dtype(torch::kFloat32).requires_grad(false);
-    torch::Tensor A_t = torch::from_blob(sparse_matrix.mat, {R, C}, options).clone().cuda();
-    torch::Tensor x_t = torch::from_blob(x_h, {C}, options).clone().cuda();
-    torch::Tensor y_cpu = torch::from_blob(y_h, {R}, options).clone();
+    // auto options = torch::TensorOptions().dtype(torch::kFloat32).requires_grad(false);
+    // torch::Tensor A_t = torch::from_blob(sparse_matrix.mat, {R, C}, options).clone().cuda();
+    // torch::Tensor x_t = torch::from_blob(x_h, {C}, options).clone().cuda();
+    // torch::Tensor y_cpu = torch::from_blob(y_h_cpu_ref, {R}, options).clone();
     // torch::Tensor y_cuda = torch::from_blob(y_h, {R}, options).clone();
 
-    torch::Tensor y_t = compute_torch_mv<torch::Tensor>(A_t, x_t).cpu();
+    // torch::Tensor y_t = compute_torch_mv<torch::Tensor>(A_t, x_t).cpu();
 
-    std::cout<<"From CPU "<<y_cpu<<std::endl;
-    std::cout<<"From Torch "<<y_t<<std::endl;
+    // std::cout<<"From CPU "<<y_cpu<<std::endl;
+    // std::cout<<"From CUDA "<<y_cuda<<std::endl;
+    // std::cout<<"From Torch "<<y_t<<std::endl;
 
-    std::cout   << "CPU vs Torch allclose: "
-                << (torch::allclose(y_cpu, y_t, abs_tol, rel_tol) ? "true" : "false")
+    std::cout   << "CPU vs CUDA allclose: "
+                << (all_close<T>(y_h_cpu_ref, y_h, sparse_matrix.R, abs_tol, rel_tol) ? "true" : "false")
                 << std::endl;
 
-    // // std::cout<<"From CUDA "<<y_cuda<<std::endl;
-    // // std::cout<<"From Torch "<<y_t<<std::endl;
+    // std::cout   << "CPU vs Torch allclose: "
+    //             << (torch::allclose(y_cpu, y_t, abs_tol, rel_tol) ? "true" : "false")
+    //             << std::endl;
 
     // std::cout   << "CUDA vs Torch allclose: "
     //             << (torch::allclose(y_cuda, y_t, abs_tol, rel_tol) ? "true" : "false")
     //             << std::endl;
 
-    // CHECK_CUDA_ERROR(cudaFree(A_d.rowPtrs));
-    // CHECK_CUDA_ERROR(cudaFree(A_d.colIdx));
-    // CHECK_CUDA_ERROR(cudaFree(A_d.value));
-    // CHECK_CUDA_ERROR(cudaFree(x_d));
-    // CHECK_CUDA_ERROR(cudaFree(y_d));
+    CHECK_CUDA_ERROR(cudaFree(A_d.rowPtrs));
+    CHECK_CUDA_ERROR(cudaFree(A_d.colIdx));
+    CHECK_CUDA_ERROR(cudaFree(A_d.value));
+    CHECK_CUDA_ERROR(cudaFree(x_d));
+    CHECK_CUDA_ERROR(cudaFree(y_d));
     free(A_h.rowPtrs);
     free(A_h.colIdx);
     free(A_h.value);
