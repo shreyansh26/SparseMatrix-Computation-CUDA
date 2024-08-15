@@ -1,11 +1,11 @@
 #include <iostream>
-// #include <torch/torch.h>
+#include <torch/torch.h>
 
 #include "sparse_matrix_utils.hpp"
 #include "cuda_utils.hpp"
 
-#define ROWS            4096
-#define COLUMNS         4096
+#define ROWS            16384
+#define COLUMNS         16384
 #define SPARSITY_RATIO  0.2
 #define BLOCK_SIZE      1024
 
@@ -75,11 +75,11 @@ void spmv_bsr(BSRMatrix<T> A, T* x, T* y) {
     CHECK_LAST_CUDA_ERROR();    
 }
 
-// template <typename T>
-// T compute_torch_mv(T A, T x) {
-//     T ans = torch::matmul(A, x);
-//     return ans;
-// }
+template <typename T>
+T compute_torch_mv(T A, T x) {
+    T ans = torch::matmul(A, x);
+    return ans;
+}
 
 template <typename T>
 void spmv_bsr_cpu(BSRMatrix<T> bsr, T* x, T* y) {
@@ -149,13 +149,13 @@ void run_engine(float sparsity_ratio, unsigned int R, unsigned int C, float abs_
     CHECK_CUDA_ERROR(cudaMemcpy(y_h, y_d, R*sizeof(T), cudaMemcpyDeviceToHost));
     // print_array<T>(y_h, R, "SpMV output CUDA");
 
-    // auto options = torch::TensorOptions().dtype(torch::kFloat32).requires_grad(false);
-    // torch::Tensor A_t = torch::from_blob(sparse_matrix.mat, {R, C}, options).clone().cuda();
-    // torch::Tensor x_t = torch::from_blob(x_h, {C}, options).clone().cuda();
-    // torch::Tensor y_cpu = torch::from_blob(y_h_cpu_ref, {R}, options).clone();
-    // torch::Tensor y_cuda = torch::from_blob(y_h, {R}, options).clone();
+    auto options = torch::TensorOptions().dtype(torch::kFloat32).requires_grad(false);
+    torch::Tensor A_t = torch::from_blob(sparse_matrix.mat, {R, C}, options).clone().cuda();
+    torch::Tensor x_t = torch::from_blob(x_h, {C}, options).clone().cuda();
+    torch::Tensor y_cpu = torch::from_blob(y_h_cpu_ref, {R}, options).clone();
+    torch::Tensor y_cuda = torch::from_blob(y_h, {R}, options).clone();
 
-    // torch::Tensor y_t = compute_torch_mv<torch::Tensor>(A_t, x_t).cpu();
+    torch::Tensor y_t = compute_torch_mv<torch::Tensor>(A_t, x_t).cpu();
 
     // std::cout<<"From CPU "<<y_cpu<<std::endl;
     // std::cout<<"From CUDA "<<y_cuda<<std::endl;
@@ -165,13 +165,13 @@ void run_engine(float sparsity_ratio, unsigned int R, unsigned int C, float abs_
                 << (all_close<T>(y_h_cpu_ref, y_h, sparse_matrix.R, abs_tol, rel_tol) ? "true" : "false")
                 << std::endl;
 
-    // std::cout   << "CPU vs Torch allclose: "
-    //             << (torch::allclose(y_cpu, y_t, abs_tol, rel_tol) ? "true" : "false")
-    //             << std::endl;
+    std::cout   << "CPU vs Torch allclose: "
+                << (torch::allclose(y_cpu, y_t, abs_tol, rel_tol) ? "true" : "false")
+                << std::endl;
 
-    // std::cout   << "CUDA vs Torch allclose: "
-    //             << (torch::allclose(y_cuda, y_t, abs_tol, rel_tol) ? "true" : "false")
-    //             << std::endl;
+    std::cout   << "CUDA vs Torch allclose: "
+                << (torch::allclose(y_cuda, y_t, abs_tol, rel_tol) ? "true" : "false")
+                << std::endl;
 
     CHECK_CUDA_ERROR(cudaFree(A_d.rowPtrs));
     CHECK_CUDA_ERROR(cudaFree(A_d.colIdx));
