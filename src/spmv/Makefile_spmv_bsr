@@ -1,22 +1,22 @@
-TORCH_PATH 				= ./libtorch/libtorch_cxx11_abi_2.4.0_cu121
+TORCH_PATH 				= ../../lib/libtorch/libtorch_cxx11_abi_2.4.0_cu121
 NVCC 					= /usr/bin/nvcc
 GCC 					= /usr/bin/g++
-NVCC_FLAGS  			= -O3 -I/usr/include -I$(TORCH_PATH)/include/torch/csrc/api/include -I$(TORCH_PATH)/include/
+NVCC_FLAGS  			= -O3 -I../../include -I/usr/include -I$(TORCH_PATH)/include/torch/csrc/api/include -I$(TORCH_PATH)/include/
 LD_FLAGS    			= -lcudart -L/usr/lib64 -L$(TORCH_PATH)/lib -lc10 -lc10_cuda -ltorch -Wl,--no-as-needed -ltorch_cuda -Wl,--as-needed -ltorch_cpu -ltorch_python -lcaffe2_nvrtc -Wl,-rpath,$(TORCH_PATH)/lib
-EXE	        			= spmv_coo
-OBJ	        			= spmv_coo.o
+EXE	        			= spmv_bsr
+OBJ	        			= spmv_bsr.o
 UTILS_OBJ 				= cuda_utils.o
 SPARSE_MATRIX_UTILS_OBJ	= sparse_matrix_utils.o
 
 default: $(EXE)
 
-$(UTILS_OBJ): cuda_utils.cu
+$(UTILS_OBJ): ../cuda_utils.cu
 	$(NVCC) -c -o $@ $< $(NVCC_FLAGS)
 
-$(SPARSE_MATRIX_UTILS_OBJ): sparse_matrix_utils.cpp
+$(SPARSE_MATRIX_UTILS_OBJ): ../sparse_matrix_utils.cpp
 	$(NVCC) -c -o $@ $< $(NVCC_FLAGS)
 
-$(OBJ): spmv_coo.cu
+$(OBJ): spmv_bsr.cu
 	$(NVCC) -c -o $@ $< $(NVCC_FLAGS)
 
 $(EXE): $(UTILS_OBJ) $(SPARSE_MATRIX_UTILS_OBJ) $(OBJ)
