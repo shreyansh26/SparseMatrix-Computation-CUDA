@@ -116,7 +116,7 @@ __global__ void spmv_bsc_block_kernel(BSCMatrix<T> A, T* x, T* y) {
     unsigned int block_row = A.rowIdx[A.colPtrs[block_col] + local_block_idx];
 
     if(block_row_idx < b) {
-        shared_x[block_row_idx] = x[block_col * b + block_row_idx];
+        shared_x[block_row_idx] = x[block_col * b + block_row_idx]; // here block_row_idx is essentially used for the column indexes of the block (ideally if block dimensions were unequal, we would have to use threadIdx.y for the column index)
     }
     __syncthreads();
 
