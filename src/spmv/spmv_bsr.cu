@@ -105,7 +105,7 @@ __global__ void spmv_bsr_block_kernel(BSRMatrix<T> A, T* x, T* y) {
             break;
         }
     }
-    if (left == right) 
+    if(left == right) 
         block_row = left;
 
     unsigned int block_col = A.colIdx[block_idx];
@@ -170,20 +170,30 @@ __global__ void spmv_bsr_block_shared_kernel(BSRMatrix<T> A, T* x, T* y) {
             break;
         }
     }
-    if (left == right) 
+    if(left == right) 
         block_row = left;
 
     unsigned int block_col = A.colIdx[block_idx];
     T* block = &A.value[block_idx * b * b];
 
     // Load x into shared memory
-    for (unsigned int i = thread_row; i < b; i += blockDim.x) {
-        unsigned int col = block_col * b + i;
-        if(col < A.C)
-            shared_x[i] = x[col];
-        else 
-            shared_x[i] = 0;
-    }
+    
+    // Using Grid-Stride loops
+    // for(unsigned int i = thread_row; i < b; i += blockDim.x) {
+    //     unsigned int col = block_col * b + i;
+    //     if(col < A.C)
+    //         shared_x[i] = x[col];
+    //     else 
+    //         shared_x[i] = 0;
+    // }
+
+    // Without using Grid-Stride loops
+    unsigned int col = block_col * b + thread_row;
+    if(col < A.C)
+        shared_x[thread_row] = x[col];
+    else 
+        shared_x[thread_row] = 0;
+
     __syncthreads();
 
     if(thread_row < b) {
