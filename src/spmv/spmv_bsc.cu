@@ -95,10 +95,10 @@ __global__ void spmv_bsc_block_kernel(BSCMatrix<T> A, T* x, T* y) {
 
     while(left < right) {
         unsigned int mid = (left + right) / 2;
-        if (block_idx < A.colPtrs[mid]) {
+        if(block_idx < A.colPtrs[mid]) {
             right = mid;
         } 
-        else if (block_idx >= A.colPtrs[mid + 1]) {
+        else if(block_idx >= A.colPtrs[mid + 1]) {
             left = mid + 1;
         } 
         else {
