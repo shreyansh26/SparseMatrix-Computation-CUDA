@@ -139,7 +139,7 @@ void spmv_bsr_block(BSRMatrix<T> A, T* x, T* y) {
     CHECK_LAST_CUDA_ERROR();    
 }
 
-// Kernel that assigns one thread block per BSR block
+// Kernel that assigns one thread block per BSR block with shared memory
 template <typename T>
 __global__ void spmv_bsr_block_shared_kernel(BSRMatrix<T> A, T* x, T* y) {
     extern __shared__ T shared_x[];
