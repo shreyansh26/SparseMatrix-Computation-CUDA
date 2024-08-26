@@ -139,6 +139,83 @@ void spmv_bsr_block(BSRMatrix<T> A, T* x, T* y) {
     CHECK_LAST_CUDA_ERROR();    
 }
 
+// Kernel that assigns one thread block per BSR block
+template <typename T>
+__global__ void spmv_bsr_block_shared_kernel(BSRMatrix<T> A, T* x, T* y) {
+    extern __shared__ T shared_x[];
+
+    unsigned int b = A.block_size;
+    unsigned int block_idx = blockIdx.x;
+    unsigned int thread_row = threadIdx.x;
+
+    unsigned int block_row = 0;
+    unsigned int left = 0, right = (A.R + b - 1) / b;
+
+    // Linear search to find the block_row
+    // while(block_idx >= A.rowPtrs[block_row + 1]) {
+    //     block_row++;
+    // }
+    
+    // Binary search to find the block_row
+    while(left < right) {
+        unsigned int mid = (left + right) / 2;
+        if(block_idx < A.rowPtrs[mid]) {
+            right = mid;
+        }
+        else if(block_idx >= A.rowPtrs[mid + 1]) {
+            left = mid + 1;
+        }
+        else {
+            block_row = mid;
+            break;
+        }
+    }
+    if (left == right) 
+        block_row = left;
+
+    unsigned int block_col = A.colIdx[block_idx];
+    T* block = &A.value[block_idx * b * b];
+
+    // Load x into shared memory
+    for (unsigned int i = thread_row; i < b; i += blockDim.x) {
+        unsigned int col = block_col * b + i;
+        if(col < A.C)
+            shared_x[i] = x[col];
+        else 
+            shared_x[i] = 0;
+    }
+    __syncthreads();
+
+    if(thread_row < b) {
+        T temp_sum = 0.0f;
+        for(unsigned int j = 0; j < b; j++) {
+            unsigned int col = block_col * b + j;
+            if(col < A.C) {
+                temp_sum += block[thread_row * b + j] * shared_x[j];
+            }
+        }
+
+        unsigned int row = block_row * b + thread_row;
+        if(row < A.R) {
+            atomicAdd(&y[row], temp_sum);
+        }
+    }
+}
+
+template <typename T>
+void spmv_bsr_block_shared(BSRMatrix<T> A, T* x, T* y) {
+    unsigned int b = A.block_size;
+    unsigned int num_blocks = A.size_value / (b * b);
+    dim3 blockSize(b);
+    dim3 gridSize(num_blocks);
+
+    size_t sharedMemSize = b * sizeof(T);
+
+    spmv_bsr_block_shared_kernel<T><<<gridSize, blockSize, sharedMemSize>>>(A, x, y);
+    
+    CHECK_LAST_CUDA_ERROR();    
+}
+
 template <typename T>
 T compute_torch_mv(T A, T x) {
     T ans = torch::matmul(A, x);
@@ -207,8 +284,9 @@ void run_engine(float sparsity_ratio, unsigned int R, unsigned int C, float abs_
     CHECK_CUDA_ERROR(cudaMemcpy(x_d, x_h, C*sizeof(T), cudaMemcpyHostToDevice));
     CHECK_CUDA_ERROR(cudaMemcpy(y_d, y_h, R*sizeof(T), cudaMemcpyHostToDevice));
 
-    spmv_bsr<T>(A_d, x_d, y_d);
+    // spmv_bsr<T>(A_d, x_d, y_d);
     // spmv_bsr_block<T>(A_d, x_d, y_d);
+    spmv_bsr_block_shared<T>(A_d, x_d, y_d);
 
     CHECK_CUDA_ERROR(cudaMemcpy(y_h, y_d, R*sizeof(T), cudaMemcpyDeviceToHost));
     // print_array<T>(y_h, R, "SpMV output CUDA");
