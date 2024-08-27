@@ -172,6 +172,12 @@ __global__ void spmm_bsr_dsd_block_shared_kernel(BSRMatrix<T> A, T* B, T* C, uns
     unsigned int block_row = 0;
     unsigned int left = 0, right = (A.R + b - 1) / b;
 
+    // Linear search to find the block_row
+    // while(block_idx >= A.rowPtrs[block_row + 1]) {
+    //     block_row++;
+    // }
+    
+    // Binary search to find the block_row
     while(left < right) {
         unsigned int mid = (left + right) / 2;
         if(block_idx < A.rowPtrs[mid]) {
