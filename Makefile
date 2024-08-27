@@ -58,4 +58,3 @@ clean:
 	$(MAKE) -C src/spmm -f Makefile_spmm_csc_dds clean
 	$(MAKE) -C src/spmm -f Makefile_spmm_bsr_dsd clean
 	$(MAKE) -C src/spmm -f Makefile_spmm_bsc_dds clean
-
