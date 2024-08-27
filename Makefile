@@ -36,13 +36,14 @@ spmm:
 	$(MAKE) -C src/spmm -f Makefile_spmm_csr_dsd
 	$(MAKE) -C src/spmm -f Makefile_spmm_csc_dds
 	$(MAKE) -C src/spmm -f Makefile_spmm_bsr_dsd
-
+	$(MAKE) -C src/spmm -f Makefile_spmm_bsc_dds
 spmm_dsd:
 	$(MAKE) -C src/spmm -f Makefile_spmm_csr_dsd
 	$(MAKE) -C src/spmm -f Makefile_spmm_bsr_dsd
 
 spmm_dds:
 	$(MAKE) -C src/spmm -f Makefile_spmm_csc_dds
+	$(MAKE) -C src/spmm -f Makefile_spmm_bsc_dds
 
 clean:
 	$(MAKE) -C src/sparse_matrix_conversion -f Makefile_sparse_matrix_conversion clean
@@ -56,4 +57,5 @@ clean:
 	$(MAKE) -C src/spmm -f Makefile_spmm_csr_dsd clean
 	$(MAKE) -C src/spmm -f Makefile_spmm_csc_dds clean
 	$(MAKE) -C src/spmm -f Makefile_spmm_bsr_dsd clean
+	$(MAKE) -C src/spmm -f Makefile_spmm_bsc_dds clean
 
