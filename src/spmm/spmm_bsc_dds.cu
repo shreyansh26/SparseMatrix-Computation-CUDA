@@ -162,6 +162,96 @@ void spmm_bsc_dds_block(BSCMatrix<T> A, T* B, T* C, unsigned int N) {
     CHECK_LAST_CUDA_ERROR();    
 }
 
+// Kernel that assigns one thread block per BSC block
+template <typename T>
+__global__ void spmm_bsc_dds_block_shared_kernel(BSCMatrix<T> A, T* B, T* C, unsigned int N) {
+    // A -> sparse matrix -> R x C
+    // B -> dense matrix -> N x R
+    // C -> dense matrix -> C = B @ A -> N x C
+    extern __shared__ T shared_B[];
+
+    unsigned int b = A.block_size;
+    unsigned int block_idx = blockIdx.x;
+    unsigned int thread_row = threadIdx.y;
+    unsigned int thread_col = threadIdx.x;
+
+    unsigned int block_col = 0;
+    unsigned int left = 0, right = (A.C + b - 1) / b;
+
+    // Linear search to find the block_col
+    // while (block_idx >= A.colPtrs[block_col + 1]) {
+    //     block_col++;
+    // }
+    
+    // Binary search to find the block_col
+    while (left < right) {
+        unsigned int mid = (left + right) / 2;
+        if (block_idx < A.colPtrs[mid]) {
+            right = mid;
+        }
+        else if (block_idx >= A.colPtrs[mid + 1]) {
+            left = mid + 1;
+        }
+        else {
+            block_col = mid;
+            break;
+        }
+    }
+
+    if (left == right) {
+        block_col = left;
+    }
+
+    unsigned int block_row = A.rowIdx[block_idx];
+    const T* block = &A.value[block_idx * b * b];
+
+    for (unsigned int n = 0; n < N; n += blockDim.y) {
+        unsigned int row = n + thread_row;
+
+        // Load B into shared memory
+        if(row < N and thread_col < b) {
+            unsigned int B_col = block_row * b + thread_col;
+            if(B_col < A.R) {
+                shared_B[thread_col * blockDim.y + thread_row] = B[row * A.R + B_col];
+            }
+            else {
+                shared_B[thread_col * blockDim.y + thread_row] = 0;
+            }
+        }
+
+        __syncthreads();
+
+        if (row < N) {
+            T temp_sum = 0.0f;
+            for (unsigned int i = 0; i < b; i++) {
+                temp_sum += shared_B[i * blockDim.y + thread_row] * block[i * b + thread_col];
+            }
+            unsigned int C_col = block_col * b + thread_col;
+            if (C_col < A.C) {
+                atomicAdd(&C[row * A.C + C_col], temp_sum);
+            }
+        }
+
+        __syncthreads();
+    }
+}
+
+template <typename T>
+void spmm_bsc_dds_block_shared(BSCMatrix<T> A, T* B, T* C, unsigned int N) {
+    // A -> sparse matrix -> R x C
+    // B -> dense matrix -> N x R
+    // C -> dense matrix -> C = B @ A -> N x C
+    unsigned int b = A.block_size;
+    unsigned int num_blocks = A.size_value / (b * b);
+    dim3 blockSize(b, 16);
+    dim3 gridSize(num_blocks);
+
+    size_t sharedMemSize = b * blockSize.y * sizeof(T);
+    spmm_bsc_dds_block_shared_kernel<T><<<gridSize, blockSize, sharedMemSize>>>(A, B, C, N);
+    
+    CHECK_LAST_CUDA_ERROR();    
+}
+
 template <typename T>
 T compute_torch_mm(T A, T B) {
     T ans = torch::matmul(A, B);
@@ -200,7 +290,11 @@ void run_engine(float sparsity_ratio, unsigned int R, unsigned int C, unsigned i
     CHECK_CUDA_ERROR(cudaMemcpy(B_d, B_h, N * R * sizeof(T), cudaMemcpyHostToDevice));
     CHECK_CUDA_ERROR(cudaMemcpy(C_d, C_h, N * C * sizeof(T), cudaMemcpyHostToDevice));
 
-    spmm_bsc_dds<T>(A_d, B_d, C_d, N);
+    std::cout<<"Starting kernel"<<std::endl;
+    // spmm_bsc_dds<T>(A_d, B_d, C_d, N);
+    // spmm_bsc_dds_block<T>(A_d, B_d, C_d, N);
+    spmm_bsc_dds_block_shared<T>(A_d, B_d, C_d, N);
+    std::cout<<"Kernel done"<<std::endl;
 
     CHECK_CUDA_ERROR(cudaMemcpy(C_h, C_d, N * C * sizeof(T), cudaMemcpyDeviceToHost));
 
