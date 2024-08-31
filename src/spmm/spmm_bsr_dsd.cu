@@ -280,10 +280,12 @@ void run_engine(float sparsity_ratio, unsigned int R, unsigned int C, unsigned i
     CHECK_CUDA_ERROR(cudaMemcpy(B_d, B_h, C * N * sizeof(T), cudaMemcpyHostToDevice));
     CHECK_CUDA_ERROR(cudaMemcpy(C_d, C_h, R * N * sizeof(T), cudaMemcpyHostToDevice));
 
-    spmm_bsr_dsd<T>(A_d, B_d, C_d, N);
+    std::cout<<"Starting kernel"<<std::endl;
+    // spmm_bsr_dsd<T>(A_d, B_d, C_d, N);
     // spmm_bsr_dsd_block<T>(A_d, B_d, C_d, N);
-    // spmm_bsr_dsd_block_shared<T>(A_d, B_d, C_d, N);
-
+    spmm_bsr_dsd_block_shared<T>(A_d, B_d, C_d, N);
+    std::cout<<"Kernel done"<<std::endl;
+    
     CHECK_CUDA_ERROR(cudaMemcpy(C_h, C_d, R * N * sizeof(T), cudaMemcpyDeviceToHost));
 
     auto options = torch::TensorOptions().dtype(torch::kFloat32).requires_grad(false);
